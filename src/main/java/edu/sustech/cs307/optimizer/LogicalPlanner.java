@@ -29,6 +29,11 @@ public class LogicalPlanner {
     private static final Pattern START_TRANSACTION_PATTERN = Pattern.compile("(?i)^START\\s+TRANSACTION$");
     private static final Pattern RELEASE_SAVEPOINT_PATTERN =
             Pattern.compile("(?i)^RELEASE(?:\\s+SAVEPOINT)?\\s+([A-Za-z_][A-Za-z0-9_]*)$");
+    private static final Pattern SAVEPOINT_PATTERN =
+            Pattern.compile("(?i)^SAVEPOINT\\s+([A-Za-z_][A-Za-z0-9_]*)$");
+    private static final Pattern ROLLBACK_PATTERN = Pattern.compile("(?i)^ROLLBACK$");
+    private static final Pattern ROLLBACK_TO_SAVEPOINT_PATTERN =
+            Pattern.compile("(?i)^ROLLBACK\\s+TO(?:\\s+SAVEPOINT)?\\s+([A-Za-z_][A-Za-z0-9_]*)$");
 
     public static LogicalOperator resolveAndPlan(DBManager dbManager, String sql) throws DBException {
         if (sql == null || sql.isBlank()) {
@@ -126,6 +131,25 @@ public class LogicalPlanner {
         String normalizedSql = normalizeSql(sql);
         if (BEGIN_PATTERN.matcher(normalizedSql).matches() || START_TRANSACTION_PATTERN.matcher(normalizedSql).matches()) {
             dbManager.beginTransaction();
+            return true;
+        }
+        Matcher savepointMatcher = SAVEPOINT_PATTERN.matcher(normalizedSql);
+        if (savepointMatcher.matches()) {
+            dbManager.getTransactionManager().savepoint(savepointMatcher.group(1));
+            return true;
+        }
+        Matcher rollbackToMatcher = ROLLBACK_TO_SAVEPOINT_PATTERN.matcher(normalizedSql);
+        if (rollbackToMatcher.matches()) {
+            dbManager.getTransactionManager().rollbackToSavepoint(rollbackToMatcher.group(1));
+            return true;
+        }
+        if (ROLLBACK_PATTERN.matcher(normalizedSql).matches()) {
+            dbManager.getTransactionManager().rollback();
+            return true;
+        }
+        Matcher releaseMatcher = RELEASE_SAVEPOINT_PATTERN.matcher(normalizedSql);
+        if (releaseMatcher.matches()) {
+            dbManager.getTransactionManager().releaseSavepoint(releaseMatcher.group(1));
             return true;
         }
         return false;
