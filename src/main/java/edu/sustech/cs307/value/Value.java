@@ -1,6 +1,7 @@
 package edu.sustech.cs307.value;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 public class Value {
     public Object value;
@@ -49,7 +50,7 @@ public class Value {
             }
             case CHAR -> {
                 String str = (String) value;
-                yield str.getBytes();
+                yield str.getBytes(StandardCharsets.UTF_8);
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         };
@@ -78,7 +79,7 @@ public class Value {
                 while (end < bytes.length && bytes[end] != 0) {
                     end++;
                 }
-                yield new Value(new String(bytes, 0, end));
+                yield new Value(new String(bytes, 0, end, StandardCharsets.UTF_8));
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         };

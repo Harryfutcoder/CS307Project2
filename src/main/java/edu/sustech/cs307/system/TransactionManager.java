@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import org.pmw.tinylog.Logger;
 
 
 public class TransactionManager {
@@ -178,14 +179,16 @@ public class TransactionManager {
             try {
                 deleteDirectoryContents(transactionSnapshot.snapshotDir);
                 Files.deleteIfExists(transactionSnapshot.snapshotDir);
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                Logger.warn("Failed to clean transaction snapshot {}", e.getMessage());
             }
         }
         for (NamedSnapshot savepoint : savepoints) {
             try {
                 deleteDirectoryContents(savepoint.snapshot.snapshotDir);
                 Files.deleteIfExists(savepoint.snapshot.snapshotDir);
-            } catch (IOException ignored) {
+            } catch (IOException e) {
+                Logger.warn("Failed to clean savepoint snapshot {}", e.getMessage());
             }
         }
         transactionSnapshot = null;
