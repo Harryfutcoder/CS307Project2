@@ -1,0 +1,95 @@
+-------------------------------------------------------------------------------
+Test set: storage.BufferPoolTest
+-------------------------------------------------------------------------------
+Tests run: 13, Failures: 0, Errors: 13, Skipped: 0, Time elapsed: 0.091 s <<< FAILURE! -- in storage.BufferPoolTest
+storage.BufferPoolTest.testDeleteNonCachedPageShouldFail -- Time elapsed: 0.012 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testMultipleFetchIncrementsPinCount -- Time elapsed: 0.008 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testFlushPage_shouldClearDirtyFlag -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testFlushNonExistentPageShouldFail -- Time elapsed: 0.004 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testNewPage_shouldAllocateNewPage -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testMultipleUnpinShouldNotMakeNegativeCount -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testDeletePage_shouldRemoveFromBuffer -- Time elapsed: 0.004 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testDifferentFilePagesManagement -- Time elapsed: 0.006 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testNewPageFailureWhenPoolFullAndAllPinned -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testDirtyPageAutoFlushOnEviction -- Time elapsed: 0.009 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testUnpinPage_shouldDecreasePinCount -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testFetchPage_shouldLoadFromDiskWhenNotCached -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+
+storage.BufferPoolTest.testLRUReplacement -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot read field "position" because "page" is null
+	at storage.BufferPoolTest.setUp(BufferPoolTest.java:35)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+

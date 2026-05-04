@@ -1,0 +1,15 @@
+record/RecordFileHandleTest.class
+record/BitMapTest.class
+record/RecordFileHandleTest$MetadataConsistencyTests.class
+record/RecordFileHandleTest$BasicCRUDTests.class
+storage/BufferPoolTest.class
+system/TransactionManagerTest.class
+storage/LRUReplacerTest.class
+value/ValueComparerTest.class
+system/RecordManagerTest.class
+record/RecordFileHandleTest$PageManagementTests.class
+record/RecordFileHandleTest$PersistenceTests.class
+storage/ClockReplacerTest.class
+storage/DiskManagerTest.class
+record/RecordFileHandleTest$ExceptionHandlingTests.class
+meta/MetaManagerTest.class
