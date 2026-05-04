@@ -1,6 +1,7 @@
 package edu.sustech.cs307.value;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 
 public class Value {
     public Object value;
@@ -49,10 +50,7 @@ public class Value {
             }
             case CHAR -> {
                 String str = (String) value;
-                ByteBuffer buffer3 = ByteBuffer.allocate(64);
-                buffer3.putInt(str.length());
-                buffer3.put(str.getBytes());
-                yield buffer3.array();
+                yield str.getBytes(StandardCharsets.UTF_8);
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         };
@@ -77,11 +75,11 @@ public class Value {
                 yield new Value(buffer2.getDouble());
             }
             case CHAR -> {
-                ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
-                var length = buffer3.getInt();
-                // int is 4 byte
-                String s = new String(bytes, 4, length);
-                yield new Value(s);
+                int end = 0;
+                while (end < bytes.length && bytes[end] != 0) {
+                    end++;
+                }
+                yield new Value(new String(bytes, 0, end, StandardCharsets.UTF_8));
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         };
@@ -95,11 +93,7 @@ public class Value {
                 return this.value.toString();
             }
             case CHAR -> {
-                byte[] bytes = ((String) this.value).getBytes();
-                ByteBuffer buffer3 = ByteBuffer.wrap(bytes);
-                var length = buffer3.getInt();
-                // int is 4 byte
-                return new String(bytes, 4, length);
+                return (String) this.value;
             }
             default -> throw new RuntimeException("Unsupported value type: " + type);
         }

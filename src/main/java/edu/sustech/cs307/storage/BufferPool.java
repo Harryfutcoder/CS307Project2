@@ -232,6 +232,25 @@ public class BufferPool {
         }
     }
 
+    public void reset() {
+        pageMap.clear();
+        freeList.clear();
+        for (int i = 0; i < poolSize; i++) {
+            freeList.add(i);
+        }
+        for (Page page : pages) {
+            Arrays.fill(page.data.array(), (byte) 0);
+            page.position = new PagePosition("null", 0);
+            page.pin_count = 0;
+            page.dirty = false;
+        }
+        if (replacer instanceof LRUReplacer lruReplacer) {
+            lruReplacer.clear();
+        } else if (replacer instanceof ClockReplacer clockReplacer) {
+            clockReplacer.clear();
+        }
+    }
+
     /**
      * 查找一个受害者页面以进行替换。
      * 

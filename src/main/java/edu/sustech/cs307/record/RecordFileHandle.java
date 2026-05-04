@@ -116,7 +116,7 @@ public class RecordFileHandle {
 
         bufferPool.unpin_page(pageHandle.page.position, true);
 
-        return new RID(pageHandle.page.getPageID(), slotNum);
+        return new RID(toLogicalPageId(pageHandle.page.getPageID()), slotNum);
     }
 
     /**
@@ -156,10 +156,11 @@ public class RecordFileHandle {
      * @throws DBException 如果页面 ID 超出范围或页面无法从缓冲池中获取。
      */
     public RecordPageHandle FetchPageHandle(int pageId) throws DBException {
-        if (pageId > fileHeader.getNumberOfPages()) {
+        if (pageId < 0 || pageId >= getDataPageCount()) {
             throw new RuntimeException(String.format("%s: pageId %d is out of range", filename, pageId));
         }
-        PagePosition pagePosition = new PagePosition(filename, pageId * Page.DEFAULT_PAGE_SIZE);
+        int physicalPageId = toPhysicalPageId(pageId);
+        PagePosition pagePosition = new PagePosition(filename, physicalPageId * Page.DEFAULT_PAGE_SIZE);
         Page page = bufferPool.FetchPage(pagePosition);
         if (page == null) {
             throw new RuntimeException(String.format("%s: pageId %d is out of range", filename, pageId));
@@ -168,7 +169,8 @@ public class RecordFileHandle {
     }
 
     public void UnpinPageHandle(int pageId, boolean is_dirty) throws DBException {
-        bufferPool.unpin_page(new PagePosition(filename, pageId), is_dirty);
+        int physicalPageId = toPhysicalPageId(pageId);
+        bufferPool.unpin_page(new PagePosition(filename, physicalPageId * Page.DEFAULT_PAGE_SIZE), is_dirty);
     }
 
     /**
@@ -191,7 +193,7 @@ public class RecordFileHandle {
 
         // Update the file header
         fileHeader.setNumberOfPages(fileHeader.getNumberOfPages() + 1);
-        fileHeader.setFirstFreePage(newPage.getPageID());
+        fileHeader.setFirstFreePage(toLogicalPageId(newPage.getPageID()));
 
         return pageHandle;
     }
@@ -218,6 +220,18 @@ public class RecordFileHandle {
      */
     private void deletePageHandle(RecordPageHandle handle) {
         handle.pageHdr.setNextFreePageNo(fileHeader.getFirstFreePage());
-        fileHeader.setFirstFreePage(handle.page.getPageID());
+        fileHeader.setFirstFreePage(toLogicalPageId(handle.page.getPageID()));
+    }
+
+    private int toPhysicalPageId(int logicalPageId) {
+        return logicalPageId + 1;
+    }
+
+    private int toLogicalPageId(int physicalPageId) {
+        return physicalPageId - 1;
+    }
+
+    private int getDataPageCount() {
+        return Math.max(0, fileHeader.getNumberOfPages() - 1);
     }
 }
