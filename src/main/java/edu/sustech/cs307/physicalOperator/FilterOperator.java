@@ -1,31 +1,50 @@
 package edu.sustech.cs307.physicalOperator;
 
 import net.sf.jsqlparser.expression.Expression;
+import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
+import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
+import net.sf.jsqlparser.expression.operators.relational.ExistsExpression;
+import net.sf.jsqlparser.expression.operators.relational.InExpression;
+import net.sf.jsqlparser.expression.operators.relational.ParenthesedExpressionList;
+import net.sf.jsqlparser.statement.select.ParenthesedSelect;
+import net.sf.jsqlparser.statement.select.Select;
 import edu.sustech.cs307.meta.ColumnMeta;
+import edu.sustech.cs307.optimizer.LogicalPlanner;
+import edu.sustech.cs307.optimizer.PhysicalPlanner;
+import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.tuple.Tuple;
+import edu.sustech.cs307.value.Value;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import edu.sustech.cs307.exception.DBException;
 import org.pmw.tinylog.Logger;
 
 public class FilterOperator implements PhysicalOperator {
-    private PhysicalOperator child;
-    private Expression whereExpr;
+    private final PhysicalOperator child;
+    private final Expression whereExpr;
+    private final DBManager dbManager;
     private Tuple currentTuple;
     private boolean isOpen = false;
     // 标记是否已经准备好下一个元组
     private boolean readyForNext = false;
+    private final Map<String, List<Value>> subqueryValueCache = new HashMap<>();
+    private final Map<String, Boolean> subqueryExistsCache = new HashMap<>();
 
-    public FilterOperator(PhysicalOperator child, Expression whereExpr) {
+    public FilterOperator(PhysicalOperator child, Expression whereExpr, DBManager dbManager) {
         this.child = child;
         this.whereExpr = whereExpr;
+        this.dbManager = dbManager;
     }
 
-    public FilterOperator(PhysicalOperator child, Collection<Expression> whereExpr) {
+    public FilterOperator(PhysicalOperator child, Collection<Expression> whereExpr, DBManager dbManager) {
         this.child = child;
         // 只使用第一个表达式，简化逻辑
         this.whereExpr = whereExpr.iterator().next();
+        this.dbManager = dbManager;
     }
 
     @Override
@@ -86,7 +105,7 @@ public class FilterOperator implements PhysicalOperator {
             Tuple tuple = child.Current();
 
             // 如果元组不为空且满足条件，则设置为当前元组并标记为已准备好
-            if (tuple != null && tuple.eval_expr(whereExpr)) {
+            if (tuple != null && evaluateExpression(tuple, whereExpr)) {
                 Logger.debug("FilterOperator找到匹配的元组: " + tuple);
                 currentTuple = tuple;
                 readyForNext = true;
@@ -97,6 +116,106 @@ public class FilterOperator implements PhysicalOperator {
         // 没有找到匹配的元组
         Logger.debug("FilterOperator没有找到更多匹配的元组");
         return false;
+    }
+
+    private boolean evaluateExpression(Tuple tuple, Expression expression) throws DBException {
+        if (expression == null) {
+            return true;
+        }
+        if (expression instanceof AndExpression andExpression) {
+            return evaluateExpression(tuple, andExpression.getLeftExpression())
+                    && evaluateExpression(tuple, andExpression.getRightExpression());
+        }
+        if (expression instanceof OrExpression orExpression) {
+            return evaluateExpression(tuple, orExpression.getLeftExpression())
+                    || evaluateExpression(tuple, orExpression.getRightExpression());
+        }
+        if (expression instanceof ExistsExpression existsExpression) {
+            return evaluateExistsExpression(existsExpression);
+        }
+        if (expression instanceof InExpression inExpression && inExpression.getRightExpression() instanceof ParenthesedSelect) {
+            return evaluateInSubquery(tuple, inExpression);
+        }
+        return tuple.eval_expr(expression);
+    }
+
+    private boolean evaluateExistsExpression(ExistsExpression existsExpression) throws DBException {
+        if (!(existsExpression.getRightExpression() instanceof ParenthesedSelect parenthesedSelect)) {
+            return false;
+        }
+        String subquerySql = parenthesedSelect.toString();
+        Boolean exists = subqueryExistsCache.get(subquerySql);
+        if (exists == null) {
+            exists = executeSubqueryHasRow(parenthesedSelect.getSelect());
+            subqueryExistsCache.put(subquerySql, exists);
+        }
+        return existsExpression.isNot() ? !exists : exists;
+    }
+
+    private boolean evaluateInSubquery(Tuple tuple, InExpression inExpression) throws DBException {
+        if (!(inExpression.getRightExpression() instanceof ParenthesedSelect parenthesedSelect)) {
+            return tuple.eval_expr(inExpression);
+        }
+        Value leftValue = tuple.evaluateExpression(inExpression.getLeftExpression());
+        String subquerySql = parenthesedSelect.toString();
+        List<Value> values = subqueryValueCache.get(subquerySql);
+        if (values == null) {
+            values = executeSubqueryValues(parenthesedSelect.getSelect());
+            subqueryValueCache.put(subquerySql, values);
+        }
+        boolean matched = false;
+        for (Value value : values) {
+            try {
+                if (edu.sustech.cs307.value.ValueComparer.compare(leftValue, value) == 0) {
+                    matched = true;
+                    break;
+                }
+            } catch (DBException ignore) {
+                // type mismatch means not equal for IN semantics in this simplified engine
+            }
+        }
+        return inExpression.isNot() ? !matched : matched;
+    }
+
+    private boolean executeSubqueryHasRow(Select select) throws DBException {
+        if (dbManager == null) {
+            return false;
+        }
+        var logical = LogicalPlanner.resolveAndPlan(dbManager, select.toString());
+        if (logical == null) {
+            return false;
+        }
+        var physical = PhysicalPlanner.generateOperator(dbManager, logical);
+        physical.Begin();
+        boolean hasRow = physical.hasNext();
+        physical.Close();
+        return hasRow;
+    }
+
+    private List<Value> executeSubqueryValues(Select select) throws DBException {
+        ArrayList<Value> values = new ArrayList<>();
+        if (dbManager == null) {
+            return values;
+        }
+        var logical = LogicalPlanner.resolveAndPlan(dbManager, select.toString());
+        if (logical == null) {
+            return values;
+        }
+        var physical = PhysicalPlanner.generateOperator(dbManager, logical);
+        physical.Begin();
+        while (physical.hasNext()) {
+            physical.Next();
+            Tuple tuple = physical.Current();
+            if (tuple == null) {
+                continue;
+            }
+            Value[] rowValues = tuple.getValues();
+            if (rowValues.length > 0) {
+                values.add(rowValues[0]);
+            }
+        }
+        physical.Close();
+        return values;
     }
 
     @Override

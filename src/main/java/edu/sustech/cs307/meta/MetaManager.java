@@ -49,6 +49,7 @@ public class MetaManager {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
         this.tables.get(tableName).addColumn(column);
+        saveToJson();
     }
 
     public void dropColumnInTable(String tableName, String columnName) throws DBException {
@@ -56,6 +57,24 @@ public class MetaManager {
             throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
         }
         this.tables.get(tableName).dropColumn((columnName));
+        saveToJson();
+    }
+
+    public void addIndexInTable(String tableName, String indexName, String columnName, TableMeta.IndexType type)
+            throws DBException {
+        if (!tables.containsKey(tableName)) {
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
+        }
+        this.tables.get(tableName).addIndex(indexName, columnName, type);
+        saveToJson();
+    }
+
+    public void dropIndexInTable(String tableName, String indexName) throws DBException {
+        if (!tables.containsKey(tableName)) {
+            throw new DBException(ExceptionTypes.TableDoesNotExist(tableName));
+        }
+        this.tables.get(tableName).dropIndex(indexName);
+        saveToJson();
     }
 
     public TableMeta getTable(String tableName) throws DBException {

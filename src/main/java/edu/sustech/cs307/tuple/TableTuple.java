@@ -30,7 +30,9 @@ public class TableTuple extends Tuple {
 
     @Override
     public Value getValue(TabCol tabCol) throws DBException {
-        if (!tabCol.getTableName().equals(tableName)) {
+        if (tabCol.getTableName() != null
+                && !tabCol.getTableName().isBlank()
+                && !tabCol.getTableName().equalsIgnoreCase(tableName)) {
             return null;
         }
         ColumnMeta columnMeta = tableMeta.getColumnMeta(tabCol.getColumnName());
@@ -39,20 +41,16 @@ public class TableTuple extends Tuple {
         }
         int offset = columnMeta.getOffset();
         int len = columnMeta.getLen();
-        // Use GetColumnValue to get the value based on offset and len
-        ByteBuf columnValueBuf = record.GetColumnValue(offset, len); // Use the record passed to getValue
-        // Convert ByteBuf to Value (assuming you have a method for this)
+        ByteBuf columnValueBuf = record.GetColumnValue(offset, len);
         return convertByteBufToValue(columnValueBuf, columnMeta.type);
     }
 
     private Value convertByteBufToValue(ByteBuf byteBuf, ValueType columnType) throws DBException {
-        if (columnType == ValueType.INTEGER) {
-            return new Value(byteBuf.getLong(0));
-        } else if (columnType == ValueType.CHAR) {
-            return new Value(byteBuf.getCharSequence(0, 64, java.nio.charset.StandardCharsets.UTF_8).toString());
-        } else if (columnType == ValueType.FLOAT) {
-            return new Value(byteBuf.getDouble(0));
-        } else {
+        byte[] bytes = new byte[byteBuf.capacity()];
+        byteBuf.getBytes(0, bytes);
+        try {
+            return Value.FromByte(bytes, columnType);
+        } catch (RuntimeException e) {
             throw new DBException(ExceptionTypes.UnsupportedValueType(columnType));
         }
     }

@@ -15,6 +15,13 @@ import net.sf.jsqlparser.statement.select.*;
 import net.sf.jsqlparser.statement.update.Update;
 import net.sf.jsqlparser.statement.insert.Insert;
 import net.sf.jsqlparser.statement.create.table.CreateTable;
+import net.sf.jsqlparser.statement.create.index.CreateIndex;
+import net.sf.jsqlparser.statement.drop.Drop;
+import net.sf.jsqlparser.statement.delete.Delete;
+import net.sf.jsqlparser.statement.alter.Alter;
+import net.sf.jsqlparser.statement.alter.AlterExpression;
+import net.sf.jsqlparser.statement.alter.AlterOperation;
+import net.sf.jsqlparser.expression.Function;
 
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.logicalOperator.*;
@@ -34,12 +41,20 @@ public class LogicalPlanner {
     private static final Pattern ROLLBACK_PATTERN = Pattern.compile("(?i)^ROLLBACK$");
     private static final Pattern ROLLBACK_TO_SAVEPOINT_PATTERN =
             Pattern.compile("(?i)^ROLLBACK\\s+TO(?:\\s+SAVEPOINT)?\\s+([A-Za-z_][A-Za-z0-9_]*)$");
+    private static final Pattern SHOW_TABLES_PATTERN = Pattern.compile("(?i)^SHOW\\s+TABLES$");
+    private static final Pattern DESC_TABLE_PATTERN =
+            Pattern.compile("(?i)^(?:DESC|DESCRIBE)\\s+([A-Za-z_][A-Za-z0-9_]*)$");
+    private static final Pattern DROP_TABLE_PATTERN =
+            Pattern.compile("(?i)^DROP\\s+TABLE\\s+([A-Za-z_][A-Za-z0-9_]*)$");
 
     public static LogicalOperator resolveAndPlan(DBManager dbManager, String sql) throws DBException {
         if (sql == null || sql.isBlank()) {
             return null;
         }
         if (handleManualTransactionCommand(dbManager, sql)) {
+            return null;
+        }
+        if (handleManualMetaCommand(dbManager, sql)) {
             return null;
         }
         JSqlParser parser = new CCJSqlParserManager();
@@ -57,11 +72,12 @@ public class LogicalPlanner {
             operator = handleInsert(dbManager, insertStmt);
         } else if (stmt instanceof Update updateStmt) {
             operator = handleUpdate(dbManager, updateStmt);
+        } else if (stmt instanceof Delete deleteStmt) {
+            operator = handleDelete(dbManager, deleteStmt);
         }else if (stmt instanceof Commit) {
             dbManager.commitTransaction();
             return null;
         }
-        //todo: add condition of handleDelete
         // functional
         else if (stmt instanceof CreateTable createTableStmt) {
             CreateTableExecutor createTable = new CreateTableExecutor(createTableStmt, dbManager, sql);
@@ -72,8 +88,17 @@ public class LogicalPlanner {
             explainExecutor.execute();
             return null;
         } else if (stmt instanceof ShowStatement showStatement) {
-            ShowDatabaseExecutor showDatabaseExecutor = new ShowDatabaseExecutor(showStatement);
+            ShowDatabaseExecutor showDatabaseExecutor = new ShowDatabaseExecutor(showStatement, dbManager);
             showDatabaseExecutor.execute();
+            return null;
+        } else if (stmt instanceof CreateIndex createIndexStmt) {
+            handleCreateIndex(dbManager, createIndexStmt);
+            return null;
+        } else if (stmt instanceof Drop dropStmt) {
+            handleDropStatement(dbManager, dropStmt);
+            return null;
+        } else if (stmt instanceof Alter alterStmt) {
+            handleAlterStatement(dbManager, alterStmt);
             return null;
         } else {
             throw new DBException(ExceptionTypes.UnsupportedCommand((stmt.toString())));
@@ -105,7 +130,22 @@ public class LogicalPlanner {
         if (plainSelect.getWhere() != null) {
             root = new LogicalFilterOperator(root, plainSelect.getWhere());
         }
-        root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
+        boolean hasAggregateFunction = false;
+        for (SelectItem<?> selectItem : plainSelect.getSelectItems()) {
+            if (selectItem.getExpression() instanceof Function) {
+                hasAggregateFunction = true;
+                break;
+            }
+        }
+
+        if (hasAggregateFunction || plainSelect.getGroupBy() != null) {
+            root = new LogicalAggregateOperator(root, plainSelect.getSelectItems(), plainSelect.getGroupBy());
+        } else {
+            root = new LogicalProjectOperator(root, plainSelect.getSelectItems());
+        }
+        if (plainSelect.getOrderByElements() != null && !plainSelect.getOrderByElements().isEmpty()) {
+            root = new LogicalSortOperator(root, plainSelect.getOrderByElements());
+        }
         return root;
     }
 
@@ -118,6 +158,52 @@ public class LogicalPlanner {
         LogicalOperator root = new LogicalTableScanOperator(updateStmt.getTable().getName(), dbManager);
         return new LogicalUpdateOperator(root, updateStmt.getTable().getName(), updateStmt.getUpdateSets(),
                 updateStmt.getWhere());
+    }
+
+    private static LogicalOperator handleDelete(DBManager dbManager, Delete deleteStmt) throws DBException {
+        String tableName = deleteStmt.getTable().getName();
+        LogicalOperator root = new LogicalTableScanOperator(tableName, dbManager);
+        return new LogicalDeleteOperator(root, tableName, deleteStmt.getWhere());
+    }
+
+    private static void handleCreateIndex(DBManager dbManager, CreateIndex createIndexStmt) throws DBException {
+        String indexName = createIndexStmt.getIndex().getName();
+        String tableName = createIndexStmt.getTable().getName();
+        if (createIndexStmt.getIndex().getColumnsNames() == null || createIndexStmt.getIndex().getColumnsNames().isEmpty()) {
+            throw new DBException(ExceptionTypes.InvalidSQL("CREATE INDEX", "Missing indexed column"));
+        }
+        String columnName = createIndexStmt.getIndex().getColumnsNames().get(0);
+        dbManager.createIndex(indexName, tableName, columnName);
+    }
+
+    private static void handleDropStatement(DBManager dbManager, Drop dropStmt) throws DBException {
+        String type = dropStmt.getType();
+        if (type != null && type.equalsIgnoreCase("INDEX")) {
+            dbManager.dropIndex(dropStmt.getName().getName());
+            return;
+        }
+        if (type != null && type.equalsIgnoreCase("TABLE")) {
+            dbManager.dropTable(dropStmt.getName().getName());
+            return;
+        }
+        throw new DBException(ExceptionTypes.UnsupportedCommand(dropStmt.toString()));
+    }
+
+    private static void handleAlterStatement(DBManager dbManager, Alter alterStmt) throws DBException {
+        String tableName = alterStmt.getTable().getName();
+        for (AlterExpression expression : alterStmt.getAlterExpressions()) {
+            if (expression.getOperation() == AlterOperation.ADD && expression.getColDataTypeList() != null
+                    && !expression.getColDataTypeList().isEmpty()) {
+                var columnDef = expression.getColDataTypeList().get(0);
+                String columnName = columnDef.getColumnName();
+                String dataType = columnDef.getColDataType().getDataType();
+                dbManager.alterTableAddColumn(tableName, columnName, dataType);
+            } else if (expression.getOperation() == AlterOperation.DROP && expression.getColumnName() != null) {
+                dbManager.alterTableDropColumn(tableName, expression.getColumnName());
+            } else {
+                throw new DBException(ExceptionTypes.UnsupportedCommand(alterStmt.toString()));
+            }
+        }
     }
     private static String normalizeSql(String sql) {
         String normalizedSql = sql == null ? "" : sql.trim();
@@ -150,6 +236,25 @@ public class LogicalPlanner {
         Matcher releaseMatcher = RELEASE_SAVEPOINT_PATTERN.matcher(normalizedSql);
         if (releaseMatcher.matches()) {
             dbManager.getTransactionManager().releaseSavepoint(releaseMatcher.group(1));
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean handleManualMetaCommand(DBManager dbManager, String sql) throws DBException {
+        String normalizedSql = normalizeSql(sql);
+        if (SHOW_TABLES_PATTERN.matcher(normalizedSql).matches()) {
+            dbManager.showTables();
+            return true;
+        }
+        Matcher descMatcher = DESC_TABLE_PATTERN.matcher(normalizedSql);
+        if (descMatcher.matches()) {
+            dbManager.descTable(descMatcher.group(1));
+            return true;
+        }
+        Matcher dropMatcher = DROP_TABLE_PATTERN.matcher(normalizedSql);
+        if (dropMatcher.matches()) {
+            dbManager.dropTable(dropMatcher.group(1));
             return true;
         }
         return false;

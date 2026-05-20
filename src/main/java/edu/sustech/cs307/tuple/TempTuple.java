@@ -9,20 +9,38 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TempTuple extends Tuple {
-    private List<Value> values;
+    private final List<Value> values;
+    private final TabCol[] schema;
 
     public TempTuple(List<Value> values) {
         this.values = values;
+        this.schema = null;
+    }
+
+    public TempTuple(List<Value> values, List<TabCol> schema) {
+        this.values = values;
+        this.schema = schema.toArray(new TabCol[0]);
     }
 
     @Override
     public Value getValue(TabCol tabCol) throws DBException {
-        throw new DBException(ExceptionTypes.GetValueFromTempTuple());
+        if (schema == null) {
+            throw new DBException(ExceptionTypes.GetValueFromTempTuple());
+        }
+        for (int i = 0; i < schema.length; i++) {
+            if (schema[i].getColumnName().equalsIgnoreCase(tabCol.getColumnName())) {
+                if (tabCol.getTableName() == null || tabCol.getTableName().isBlank()
+                        || schema[i].getTableName().equalsIgnoreCase(tabCol.getTableName())) {
+                    return values.get(i);
+                }
+            }
+        }
+        return null;
     }
 
     @Override
     public TabCol[] getTupleSchema() {
-        return null;
+        return schema;
     }
 
     @Override

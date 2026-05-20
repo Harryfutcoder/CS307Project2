@@ -16,11 +16,12 @@ import edu.sustech.cs307.record.RecordFileHandle;
 import java.util.ArrayList;
 
 public class SeqScanOperator implements PhysicalOperator {
-    private String tableName;
-    private DBManager dbManager;
-    private TableMeta tableMeta;
+    private final String tableName;
+    private final DBManager dbManager;
+    private final TableMeta tableMeta;
     private RecordFileHandle fileHandle;
     private Record currentRecord;
+    private RID currentRid;
 
     private int currentPageNum;
     private int currentSlotNum;
@@ -34,94 +35,94 @@ public class SeqScanOperator implements PhysicalOperator {
         try {
             this.tableMeta = dbManager.getMetaManager().getTable(tableName);
         } catch (DBException e) {
-            // Handle exception properly, maybe log or rethrow
-            e.printStackTrace();
+            throw new IllegalArgumentException("Table does not exist: " + tableName, e);
         }
     }
 
     @Override
-    public boolean hasNext() {
-        if (!isOpen)
+    public boolean hasNext() throws DBException {
+        if (!isOpen) {
             return false;
-        try {
-            // Check if current page and slot are valid, and if there are more records
-            if (currentPageNum < totalPages) {
-                while (currentPageNum < totalPages) {
-                    RecordPageHandle pageHandle = fileHandle.FetchPageHandle(currentPageNum);
-                    while (currentSlotNum < recordsPerPage) {
-                        if (BitMap.isSet(pageHandle.bitmap, currentSlotNum)) {
-                            return true; // Found next record
-                        }
-                        currentSlotNum++;
-                    }
-                    currentPageNum++;
-                    currentSlotNum = 0; // Reset slot num for new page
-                }
-            }
-        } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
         }
-        return false; // No more records
+        return locateNextOccupiedSlot();
+    }
+
+    private boolean locateNextOccupiedSlot() throws DBException {
+        while (currentPageNum < totalPages) {
+            RecordPageHandle pageHandle = fileHandle.FetchPageHandle(currentPageNum);
+            while (currentSlotNum < recordsPerPage) {
+                if (BitMap.isSet(pageHandle.bitmap, currentSlotNum)) {
+                    return true;
+                }
+                currentSlotNum++;
+            }
+            currentPageNum++;
+            currentSlotNum = 0;
+        }
+        return false;
     }
 
     @Override
     public void Begin() throws DBException {
-        try {
-            fileHandle = dbManager.getRecordManager().OpenFile(tableName);
-            totalPages = Math.max(0, fileHandle.getFileHeader().getNumberOfPages() - 1);
-            recordsPerPage = fileHandle.getFileHeader().getNumberOfRecordsPrePage();
-            currentPageNum = 0; // Start from first data page
-            currentSlotNum = 0; // Start from first slot
-            isOpen = true;
-        } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
-            isOpen = false;
-        }
+        fileHandle = dbManager.getRecordManager().OpenFile(tableName);
+        totalPages = Math.max(0, fileHandle.getFileHeader().getNumberOfPages() - 1);
+        recordsPerPage = fileHandle.getFileHeader().getNumberOfRecordsPrePage();
+        currentPageNum = 0;
+        currentSlotNum = 0;
+        currentRecord = null;
+        currentRid = null;
+        isOpen = true;
     }
 
     @Override
-    public void Next() {
-        if (!isOpen)
-            return;
-        try {
-            if (hasNext()) { // Advance to the next record
-                RID rid = new RID(currentPageNum, currentSlotNum);
-                currentRecord = fileHandle.GetRecord(rid);
-                currentSlotNum++;
-                if (currentSlotNum >= recordsPerPage) {
-                    currentPageNum++;
-                    currentSlotNum = 0;
-                }
-                // readonly
-                fileHandle.UnpinPageHandle(currentPageNum, false);
-            } else {
-                currentRecord = null;
-            }
-        } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+    public void Next() throws DBException {
+        if (!isOpen) {
             currentRecord = null;
+            currentRid = null;
+            return;
+        }
+        if (!locateNextOccupiedSlot()) {
+            currentRecord = null;
+            currentRid = null;
+            return;
+        }
+        RID rid = new RID(currentPageNum, currentSlotNum);
+        currentRecord = fileHandle.GetRecord(rid);
+        currentRid = rid;
+        advanceCursor();
+    }
+
+    private void advanceCursor() {
+        currentSlotNum++;
+        if (currentSlotNum >= recordsPerPage) {
+            currentPageNum++;
+            currentSlotNum = 0;
         }
     }
 
     @Override
     public Tuple Current() {
-        if (!isOpen || currentRecord == null) {
+        if (!isOpen || currentRecord == null || currentRid == null) {
             return null;
         }
-        return new TableTuple(tableName, tableMeta, currentRecord, new RID(this.currentPageNum, this.currentSlotNum - 1));
+        return new TableTuple(tableName, tableMeta, currentRecord, currentRid);
     }
 
     @Override
     public void Close() {
-        if (!isOpen)
+        if (!isOpen) {
             return;
+        }
         try {
-            dbManager.getRecordManager().CloseFile(fileHandle);
+            if (fileHandle != null) {
+                dbManager.getRecordManager().CloseFile(fileHandle);
+            }
         } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+            // ignore close failure
         }
         fileHandle = null;
         currentRecord = null;
+        currentRid = null;
         isOpen = false;
     }
 
@@ -132,5 +133,13 @@ public class SeqScanOperator implements PhysicalOperator {
 
     public RecordFileHandle getFileHandle() {
         return fileHandle;
+    }
+
+    public String getTableName() {
+        return tableName;
+    }
+
+    public DBManager getDbManager() {
+        return dbManager;
     }
 }

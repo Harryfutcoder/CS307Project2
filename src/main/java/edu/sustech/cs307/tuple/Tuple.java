@@ -9,6 +9,7 @@ import edu.sustech.cs307.value.ValueType;
 import net.sf.jsqlparser.expression.*;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
 import net.sf.jsqlparser.expression.operators.conditional.OrExpression;
+import net.sf.jsqlparser.expression.operators.relational.*;
 import net.sf.jsqlparser.schema.Column;
 
 public abstract class Tuple {
@@ -22,79 +23,133 @@ public abstract class Tuple {
         return evaluateCondition(this, expr);
     }
 
-    private boolean evaluateCondition(Tuple tuple, Expression whereExpr) {
-        //todo: add Or condition
+    private boolean evaluateCondition(Tuple tuple, Expression whereExpr) throws DBException {
+        if (whereExpr == null) {
+            return true;
+        }
+        if (whereExpr instanceof ParenthesedExpressionList<?> expressionList && expressionList.size() == 1) {
+            return evaluateCondition(tuple, expressionList.get(0));
+        }
+        if (whereExpr instanceof Parenthesis parenthesis) {
+            return evaluateCondition(tuple, parenthesis.getExpression());
+        }
         if (whereExpr instanceof AndExpression andExpr) {
-            // Recursively evaluate left and right expressions
             return evaluateCondition(tuple, andExpr.getLeftExpression())
                     && evaluateCondition(tuple, andExpr.getRightExpression());
-        } else if (whereExpr instanceof BinaryExpression binaryExpression) {
-            return evaluateBinaryExpression(tuple, binaryExpression);
-        } else {
-            return true; // For non-binary and non-AND expressions, just return true for now
         }
+        if (whereExpr instanceof OrExpression orExpr) {
+            return evaluateCondition(tuple, orExpr.getLeftExpression())
+                    || evaluateCondition(tuple, orExpr.getRightExpression());
+        }
+        if (whereExpr instanceof NotExpression notExpr) {
+            return !evaluateCondition(tuple, notExpr.getExpression());
+        }
+        if (whereExpr instanceof InExpression inExpression) {
+            return evaluateInExpression(tuple, inExpression);
+        }
+        if (whereExpr instanceof BinaryExpression binaryExpression) {
+            return evaluateBinaryExpression(tuple, binaryExpression);
+        }
+        return true;
     }
 
-    private boolean evaluateBinaryExpression(Tuple tuple, BinaryExpression binaryExpr) {
+    private boolean evaluateInExpression(Tuple tuple, InExpression inExpression) throws DBException {
+        Value leftValue = evaluateValue(tuple, inExpression.getLeftExpression());
+        if (leftValue == null) {
+            return false;
+        }
+
+        Expression rightExpr = inExpression.getRightExpression();
+        if (rightExpr instanceof ParenthesedExpressionList<?> expressionList) {
+            boolean found = false;
+            for (Expression expression : expressionList) {
+                Value item = evaluateValue(tuple, expression);
+                if (item != null && ValueComparer.compare(leftValue, item) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            return inExpression.isNot() ? !found : found;
+        }
+        throw new DBException(ExceptionTypes.InvalidSQL("SELECT", "Unsupported IN clause: " + inExpression));
+    }
+
+    private boolean evaluateBinaryExpression(Tuple tuple, BinaryExpression binaryExpr) throws DBException {
         Expression leftExpr = binaryExpr.getLeftExpression();
         Expression rightExpr = binaryExpr.getRightExpression();
-        String operator = binaryExpr.getStringExpression();
-        Value leftValue = null;
-        Value rightValue = null;
-
-        try {
-            if (leftExpr instanceof Column leftColumn) {
-                //get table name
-                String table_name = leftColumn.getTableName();
-                if (tuple instanceof TableTuple) {
-                    TableTuple tableTuple = (TableTuple) tuple;
-                    table_name = tableTuple.getTableName();
-                }
-                leftValue = tuple.getValue(new TabCol(table_name, leftColumn.getColumnName()));
-                if (leftValue.type == ValueType.CHAR) {
-                    leftValue = new Value(leftValue.toString());
-                }
-            } else {
-                leftValue = getConstantValue(leftExpr); // Handle constant left value
-            }
-
-            if (rightExpr instanceof Column rightColumn) {
-                //get table name
-                String table_name = rightColumn.getTableName();
-                if (tuple instanceof TableTuple) {
-                    TableTuple tableTuple = (TableTuple) tuple;
-                    table_name = tableTuple.getTableName();
-                }
-                rightValue = tuple.getValue(new TabCol(table_name, rightColumn.getColumnName()));
-            } else {
-                rightValue = getConstantValue(rightExpr); // Handle constant right value
-
-            }
-
-            if (leftValue == null || rightValue == null)
-                return false;
-
-            int comparisonResult = ValueComparer.compare(leftValue, rightValue);
-            if (operator.equals("=")) {
-                return comparisonResult == 0;
-            }
-            // todo: finish condition > < >= <=
-
-        } catch (DBException e) {
-            e.printStackTrace(); // Handle exception properly
+        Value leftValue = evaluateValue(tuple, leftExpr);
+        Value rightValue = evaluateValue(tuple, rightExpr);
+        if (leftValue == null || rightValue == null) {
+            return false;
         }
-        return false;
+        int comparisonResult = ValueComparer.compare(leftValue, rightValue);
+        return switch (binaryExpr.getStringExpression()) {
+            case "=" -> comparisonResult == 0;
+            case "!=" -> comparisonResult != 0;
+            case "<>" -> comparisonResult != 0;
+            case ">" -> comparisonResult > 0;
+            case ">=" -> comparisonResult >= 0;
+            case "<" -> comparisonResult < 0;
+            case "<=" -> comparisonResult <= 0;
+            default -> throw new DBException(ExceptionTypes.NotSupportedOperation(binaryExpr));
+        };
     }
 
-    private Value getConstantValue(Expression expr) {
+    private Value evaluateValue(Tuple tuple, Expression expr) throws DBException {
+        if (expr instanceof Column column) {
+            return resolveColumnValue(tuple, column);
+        }
+        return getConstantValue(expr);
+    }
+
+    private Value resolveColumnValue(Tuple tuple, Column column) throws DBException {
+        String tableName = column.getTableName();
+        String columnName = column.getColumnName();
+        if (tableName != null && !tableName.isBlank()) {
+            return tuple.getValue(new TabCol(tableName, columnName));
+        }
+
+        Value found = null;
+        for (TabCol tabCol : tuple.getTupleSchema()) {
+            if (tabCol != null && tabCol.getColumnName().equalsIgnoreCase(columnName)) {
+                Value candidate = tuple.getValue(tabCol);
+                if (candidate != null) {
+                    if (found != null) {
+                        throw new DBException(ExceptionTypes.InvalidSQL("SELECT",
+                                "Ambiguous column reference: " + columnName));
+                    }
+                    found = candidate;
+                }
+            }
+        }
+        return found;
+    }
+
+    private Value getConstantValue(Expression expr) throws DBException {
         if (expr instanceof StringValue) {
             return new Value(((StringValue) expr).getValue(), ValueType.CHAR);
-        } else if (expr instanceof DoubleValue) {
+        }
+        if (expr instanceof DoubleValue) {
             return new Value(((DoubleValue) expr).getValue(), ValueType.FLOAT);
-        } else if (expr instanceof LongValue) {
+        }
+        if (expr instanceof LongValue) {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         }
-        return null; // Unsupported constant type
+        if (expr instanceof SignedExpression signedExpression) {
+            String sign = String.valueOf(signedExpression.getSign());
+            Value inner = getConstantValue(signedExpression.getExpression());
+            if (inner == null || !"-".equals(sign)) {
+                return inner;
+            }
+            if (inner.type == ValueType.INTEGER) {
+                return new Value(-((Long) inner.value));
+            }
+            if (inner.type == ValueType.FLOAT) {
+                return new Value(-((Double) inner.value));
+            }
+            throw new DBException(ExceptionTypes.InsertColumnTypeMismatch());
+        }
+        return null;
     }
 
     public Value evaluateExpression(Expression expr) throws DBException {
@@ -106,7 +161,7 @@ public abstract class Tuple {
             return new Value(((LongValue) expr).getValue(), ValueType.INTEGER);
         } else if (expr instanceof Column) {
             Column col = (Column) expr;
-            return getValue(new TabCol(col.getTableName(), col.getColumnName()));
+            return resolveColumnValue(this, col);
         } else {
             throw new DBException(ExceptionTypes.UnsupportedExpression(expr));
         }

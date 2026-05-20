@@ -15,6 +15,8 @@ public enum ExceptionTypes {
     TABLE_DOES_NOT_EXIST,
     COLUMN_ALREADY_EXIST,
     COLUMN_DOES_NOT_EXIST,
+    INDEX_ALREADY_EXIST,
+    INDEX_DOES_NOT_EXIST,
     TABLE_HAS_NO_COLUMN,
     INVALID_TABLE_WIDTH,
     INSERT_COLUMN_SIZE_NOT_MATCH,
@@ -97,6 +99,18 @@ public enum ExceptionTypes {
         COLUMN_DOES_NOT_EXIST.SetErrorResult(
                 String.format("Column does not exist: %s", columnName));
         return COLUMN_DOES_NOT_EXIST;
+    }
+
+    static public ExceptionTypes IndexAlreadyExist(String indexName) {
+        INDEX_ALREADY_EXIST.SetErrorResult(
+                String.format("Index is already exist: %s", indexName));
+        return INDEX_ALREADY_EXIST;
+    }
+
+    static public ExceptionTypes IndexDoesNotExist(String indexName) {
+        INDEX_DOES_NOT_EXIST.SetErrorResult(
+                String.format("Index does not exist: %s", indexName));
+        return INDEX_DOES_NOT_EXIST;
     }
 
     static public ExceptionTypes TableHasNoColumn(String tableName) {

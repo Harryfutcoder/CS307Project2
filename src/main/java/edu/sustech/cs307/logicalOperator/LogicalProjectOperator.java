@@ -3,8 +3,10 @@ package edu.sustech.cs307.logicalOperator;
 import edu.sustech.cs307.exception.DBException;
 import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.TabCol;
+import net.sf.jsqlparser.expression.Function;
 import net.sf.jsqlparser.schema.Column;
 import net.sf.jsqlparser.statement.select.AllColumns;
+import net.sf.jsqlparser.statement.select.AllTableColumns;
 import net.sf.jsqlparser.statement.select.SelectItem;
 
 import java.util.ArrayList;
@@ -26,12 +28,38 @@ public class LogicalProjectOperator extends LogicalOperator {
         return child;
     }
 
+    public List<SelectItem<?>> getSelectItems() {
+        return selectItems;
+    }
+
+    public boolean hasAggregateFunction() {
+        for (SelectItem<?> selectItem : selectItems) {
+            if (selectItem.getExpression() instanceof Function) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public List<TabCol> getOutputSchema() throws DBException {
         List<TabCol> outputSchema = new ArrayList<>();
         for (SelectItem<?> selectItem : selectItems) {
-            //todo : add selectItem.getExpression() instance of Column
-            if (selectItem.getExpression() instanceof AllColumns column) {
+            if (selectItem.getExpression() instanceof AllTableColumns allTableColumns) {
+                outputSchema.add(new TabCol(allTableColumns.getTable().getName(), "*"));
+            } else if (selectItem.getExpression() instanceof AllColumns) {
                 outputSchema.add(new TabCol("*", "*"));
+            } else if (selectItem.getExpression() instanceof Column column) {
+                String tableName = column.getTableName();
+                if (tableName == null || tableName.isBlank()) {
+                    tableName = "";
+                }
+                outputSchema.add(new TabCol(tableName, column.getColumnName()));
+            } else if (selectItem.getExpression() instanceof Function function) {
+                String alias = selectItem.getAliasName();
+                if (alias == null || alias.isBlank()) {
+                    alias = function.toString();
+                }
+                outputSchema.add(new TabCol("agg", alias));
             } else {
                 throw new DBException(ExceptionTypes.NotSupportedOperation(selectItem.getExpression()));
             }

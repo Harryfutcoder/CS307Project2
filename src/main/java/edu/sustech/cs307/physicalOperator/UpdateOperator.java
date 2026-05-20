@@ -5,6 +5,7 @@ import edu.sustech.cs307.exception.ExceptionTypes;
 import edu.sustech.cs307.meta.ColumnMeta;
 import edu.sustech.cs307.meta.TabCol;
 import edu.sustech.cs307.record.RecordFileHandle;
+import edu.sustech.cs307.system.DBManager;
 import edu.sustech.cs307.tuple.TableTuple;
 import edu.sustech.cs307.tuple.TempTuple;
 import edu.sustech.cs307.tuple.Tuple;
@@ -23,6 +24,7 @@ import net.sf.jsqlparser.statement.update.UpdateSet;
 
 public class UpdateOperator implements PhysicalOperator {
     private final SeqScanOperator seqScanOperator;
+    private final DBManager dbManager;
     private final String tableName;
     private final UpdateSet updateSet;
     private final Expression whereExpr;
@@ -30,12 +32,13 @@ public class UpdateOperator implements PhysicalOperator {
     private int updateCount;
     private boolean isDone;
 
-    public UpdateOperator(PhysicalOperator inputOperator, String tableName, UpdateSet updateSet,
+    public UpdateOperator(PhysicalOperator inputOperator, DBManager dbManager, String tableName, UpdateSet updateSet,
                           Expression whereExpr) {
         if (!(inputOperator instanceof SeqScanOperator seqScanOperator)) {
-            throw new RuntimeException("The delete operator only accepts SeqScanOperator as input");
+            throw new RuntimeException("The update operator only accepts SeqScanOperator as input");
         }
         this.seqScanOperator = seqScanOperator;
+        this.dbManager = dbManager;
         this.tableName = tableName;
         this.updateSet = updateSet;
         this.whereExpr = whereExpr;
@@ -82,20 +85,23 @@ public class UpdateOperator implements PhysicalOperator {
                 }
                 ByteBuf buffer = Unpooled.buffer();
                 for (Value v : newValues) {
-                    String str = "";
-                    if (v.type == ValueType.CHAR) str = (String) v.value;
-                    if (str.length() == 64) {
+                    if (v.type == ValueType.CHAR) {
+                        String str = (String) v.value;
                         ByteBuffer temp = ByteBuffer.allocate(64);
-                        temp.put(str.getBytes());
+                        byte[] bytes = str.getBytes();
+                        temp.put(bytes, 0, Math.min(bytes.length, 64));
                         buffer.writeBytes(temp.array());
                     }
-                    else buffer.writeBytes(v.ToByte());
+                    else {
+                        buffer.writeBytes(v.ToByte());
+                    }
                 }
 
                 fileHandle.UpdateRecord(tuple.getRID(), buffer);
                 updateCount++;
             }
         }
+        dbManager.refreshIndexesForTable(tableName);
     }
 
     @Override
@@ -107,7 +113,7 @@ public class UpdateOperator implements PhysicalOperator {
     public Tuple Current() {
         if (isDone) {
             ArrayList<Value> result = new ArrayList<>();
-            result.add(new Value(updateCount, ValueType.INTEGER));
+            result.add(new Value((long) updateCount));
             return new TempTuple(result);
         } else {
             throw new RuntimeException("Call Next() first");

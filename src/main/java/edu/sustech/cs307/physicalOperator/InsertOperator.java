@@ -13,6 +13,7 @@ import io.netty.buffer.Unpooled;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 public class InsertOperator implements PhysicalOperator {
     private final String data_file;
@@ -43,13 +44,24 @@ public class InsertOperator implements PhysicalOperator {
             // Serialize values to ByteBuf
             ByteBuf buffer = Unpooled.buffer();
             for (int i = 0; i < values.size(); i++) {
-                buffer.writeBytes(values.get(i).ToByte());
+                Value value = values.get(i);
+                if (value.type == ValueType.CHAR) {
+                    byte[] raw = value.ToByte();
+                    byte[] padded = new byte[Value.CHAR_SIZE];
+                    Arrays.fill(padded, (byte) 0);
+                    System.arraycopy(raw, 0, padded, 0, Math.min(raw.length, Value.CHAR_SIZE));
+                    buffer.writeBytes(padded);
+                } else {
+                    buffer.writeBytes(value.ToByte());
+                }
                 if ((columnSize == 1) || ((i + 1) % columnSize == 0 && i != 0)) {
                     fileHandle.InsertRecord(buffer);
                     buffer.clear();
                 }
             }
             this.rowCount = values.size() / columnSize;
+            dbManager.getRecordManager().CloseFile(fileHandle);
+            dbManager.refreshIndexesForTable(data_file);
         } catch (Exception e) {
             throw new RuntimeException(
                     "Failed to insert record: " + e.getMessage() + "\n");

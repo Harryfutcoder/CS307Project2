@@ -17,14 +17,27 @@ public class ProjectOperator implements PhysicalOperator {
 
     public ProjectOperator(PhysicalOperator child, List<TabCol> outputSchema) { // Use bounded wildcard
         this.child = child;
-        this.outputSchema = outputSchema;
-        if (this.outputSchema.size() == 1 && this.outputSchema.get(0).getTableName().equals("*")) {
-            List<TabCol> newOutputSchema = new ArrayList<>();
-            for (ColumnMeta tabCol : child.outputSchema()) {
-                newOutputSchema.add(new TabCol(tabCol.tableName, tabCol.name));
+        this.outputSchema = expandOutputSchema(outputSchema);
+    }
+
+    private List<TabCol> expandOutputSchema(List<TabCol> logicalOutputSchema) {
+        List<TabCol> expanded = new ArrayList<>();
+        for (TabCol tabCol : logicalOutputSchema) {
+            if ("*".equals(tabCol.getTableName()) && "*".equals(tabCol.getColumnName())) {
+                for (ColumnMeta columnMeta : child.outputSchema()) {
+                    expanded.add(new TabCol(columnMeta.tableName, columnMeta.name));
+                }
+            } else if (!"*".equals(tabCol.getTableName()) && "*".equals(tabCol.getColumnName())) {
+                for (ColumnMeta columnMeta : child.outputSchema()) {
+                    if (columnMeta.tableName.equalsIgnoreCase(tabCol.getTableName())) {
+                        expanded.add(new TabCol(columnMeta.tableName, columnMeta.name));
+                    }
+                }
+            } else {
+                expanded.add(tabCol);
             }
-            this.outputSchema = newOutputSchema;
         }
+        return expanded;
     }
 
     @Override
@@ -66,7 +79,25 @@ public class ProjectOperator implements PhysicalOperator {
 
     @Override
     public ArrayList<ColumnMeta> outputSchema() {
-        //todo: return the fields only appear in select items.
-        return child.outputSchema();
+        ArrayList<ColumnMeta> schema = new ArrayList<>();
+        int offset = 0;
+        for (TabCol tabCol : outputSchema) {
+            ColumnMeta matched = null;
+            for (ColumnMeta childMeta : child.outputSchema()) {
+                boolean columnMatches = childMeta.name.equalsIgnoreCase(tabCol.getColumnName());
+                boolean tableMatches = tabCol.getTableName() == null
+                        || tabCol.getTableName().isBlank()
+                        || childMeta.tableName.equalsIgnoreCase(tabCol.getTableName());
+                if (columnMatches && tableMatches) {
+                    matched = childMeta;
+                    break;
+                }
+            }
+            if (matched != null) {
+                schema.add(new ColumnMeta(matched.tableName, matched.name, matched.type, matched.len, offset));
+                offset += matched.len;
+            }
+        }
+        return schema;
     }
 }

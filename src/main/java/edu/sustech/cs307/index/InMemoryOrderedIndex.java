@@ -2,6 +2,7 @@ package edu.sustech.cs307.index;
 
 import edu.sustech.cs307.record.RID;
 import edu.sustech.cs307.value.Value;
+import edu.sustech.cs307.value.ValueComparer;
 import java.util.TreeMap;
 
 import org.pmw.tinylog.Logger;
@@ -14,24 +15,89 @@ import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map.Entry;
 import java.util.NavigableMap;
+import java.util.ArrayList;
+import java.util.Map;
 
 public class InMemoryOrderedIndex implements Index {
 
-    private TreeMap<Value, RID> indexMap;
+    private final TreeMap<Value, RID> indexMap;
+    private final String persistPath;
 
     public InMemoryOrderedIndex(String persistPath) {
+        this.persistPath = persistPath;
+        this.indexMap = new TreeMap<>((left, right) -> {
+            try {
+                return ValueComparer.compare(left, right);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
         // read from persistPath
         try {
             File file = new File(persistPath);
             if (file.exists()) {
                 ObjectMapper objectMapper = new ObjectMapper();
-                TypeReference<TreeMap<Value, RID>> typeRef = new TypeReference<>() {
+                TypeReference<ArrayList<IndexEntry>> typeRef = new TypeReference<>() {
                 };
-                this.indexMap = new TreeMap<>(objectMapper.readValue(file, typeRef));
+                ArrayList<IndexEntry> entries = objectMapper.readValue(file, typeRef);
+                if (entries != null) {
+                    for (IndexEntry entry : entries) {
+                        indexMap.put(entry.key, new RID(entry.pageNum, entry.slotNum));
+                    }
+                }
             }
         } catch (IOException e) {
             Logger.error("Error loading index data: " + e.getMessage());
         }
+    }
+
+    private static class IndexEntry {
+        public Value key;
+        public int pageNum;
+        public int slotNum;
+
+        public IndexEntry() {
+        }
+
+        public IndexEntry(Value key, RID rid) {
+            this.key = key;
+            this.pageNum = rid.pageNum;
+            this.slotNum = rid.slotNum;
+        }
+    }
+
+    public void put(Value value, RID rid) {
+        indexMap.put(value, rid);
+    }
+
+    public void remove(Value value) {
+        indexMap.remove(value);
+    }
+
+    public void clear() {
+        indexMap.clear();
+    }
+
+    public void persist() {
+        try {
+            File file = new File(persistPath);
+            File parent = file.getParentFile();
+            if (parent != null && !parent.exists()) {
+                parent.mkdirs();
+            }
+            ObjectMapper objectMapper = new ObjectMapper();
+            ArrayList<IndexEntry> entries = new ArrayList<>();
+            for (Map.Entry<Value, RID> entry : indexMap.entrySet()) {
+                entries.add(new IndexEntry(entry.getKey(), entry.getValue()));
+            }
+            objectMapper.writeValue(file, entries);
+        } catch (IOException e) {
+            Logger.error("Error persisting index data: " + e.getMessage());
+        }
+    }
+
+    public Iterator<Entry<Value, RID>> all() {
+        return indexMap.entrySet().iterator();
     }
 
     @Override
@@ -48,10 +114,7 @@ public class InMemoryOrderedIndex implements Index {
      */
     @Override
     public Iterator<Entry<Value, RID>> LessThan(Value value, boolean isEqual) {
-        // 获取严格小于value的所有条目视图
-        NavigableMap<Value, RID> subMap = indexMap.headMap(value, false);
-
-        // 使用descendingMap获取从大到小的迭代器
+        NavigableMap<Value, RID> subMap = indexMap.headMap(value, isEqual);
         return subMap.descendingMap().entrySet().iterator();
     }
 
@@ -63,8 +126,7 @@ public class InMemoryOrderedIndex implements Index {
      */
     @Override
     public Iterator<Entry<Value, RID>> MoreThan(Value value, boolean isEqual) {
-        // 获取严格大于value的所有条目视图
-        NavigableMap<Value, RID> subMap = indexMap.tailMap(value, false);
+        NavigableMap<Value, RID> subMap = indexMap.tailMap(value, isEqual);
         return subMap.entrySet().iterator();
     }
 
